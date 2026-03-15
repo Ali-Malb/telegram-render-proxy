@@ -1,13 +1,13 @@
 {
   "name": "telegram-render-proxy",
   "version": "1.0.0",
-  "description": "Bypass Proxy for Telegram API",
-  "main": "index.js",
+  "description": "Telegram API proxy for HF Spaces outbound firewall bypass",
+  "main": "render-proxy.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node render-proxy.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "http-proxy-middleware": "^3.0.0"
+    "http-proxy-middleware": "^2.0.6"
   }
 }
