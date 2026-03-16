@@ -4,14 +4,16 @@ var https  = require("https");
 var http   = require("http");
 var url    = require("url");
 
-var TOKEN    = process.env.TELEGRAM_BOT_TOKEN || "";
-var HF_URL   = (process.env.HF_SPACE_URL || "").replace(/\/$/, "");
-var HF_TOKEN = process.env.HF_TOKEN || "";
-var PORT     = process.env.PORT || 3000;
+var TOKEN           = process.env.TELEGRAM_BOT_TOKEN || "";
+var HF_URL          = (process.env.HF_SPACE_URL || "").replace(/\/$/, "");
+var HF_TOKEN        = process.env.HF_TOKEN || "";
+var ALLOWED_CHAT_ID = process.env.ALLOWED_CHAT_ID || "";
+var PORT            = process.env.PORT || 3000;
 
 if (!TOKEN)  { console.error("FATAL: TELEGRAM_BOT_TOKEN not set"); process.exit(1); }
 if (!HF_URL) { console.error("FATAL: HF_SPACE_URL not set"); process.exit(1); }
 if (!HF_TOKEN) { console.warn("WARNING: HF_TOKEN not set. Private spaces will reject requests."); }
+if (!ALLOWED_CHAT_ID) { console.warn("WARNING: ALLOWED_CHAT_ID not set. Bot is open to the public!"); }
 
 // ─── Telegram helpers ─────────────────────────────────────────────────────────
 function tgRequest(method, params, cb) {
@@ -49,7 +51,6 @@ function askHF(chatId, text, cb) {
     "Content-Length": Buffer.byteLength(body)
   };
   
-  // The VIP Pass to bypass the Private Space login screen
   if (HF_TOKEN) {
     headers["Authorization"] = "Bearer " + HF_TOKEN;
   }
@@ -64,16 +65,14 @@ function askHF(chatId, text, cb) {
     var d = "";
     res.on("data", function(c) { d += c; });
     res.on("end",  function() {
-      // Safety catch: Don't text HTML to the user if HF throws an error
       if (res.statusCode !== 200) {
-        console.error("[relay] HTTP " + res.statusCode + " from HF. Snippet: " + d.substring(0, 100));
-        return cb(new Error("HF Gatekeeper Blocked Request (HTTP " + res.statusCode + ")"));
+        console.error("[relay] HTTP " + res.statusCode + " from HF.");
+        return cb(new Error("HF Gatekeeper Blocked Request"));
       }
       try {
         var parsed = JSON.parse(d);
         cb(null, parsed.reply || "...");
       } catch(e) {
-        console.error("[relay] Parse error. Raw response:", d.substring(0, 200));
         cb(new Error("Invalid JSON response from HF Space"));
       }
     });
@@ -115,6 +114,13 @@ function poll() {
       var text   = msg.text;
       var msgKey = update.update_id;
 
+      // --- THE BOUNCER ---
+      if (ALLOWED_CHAT_ID && String(chatId) !== String(ALLOWED_CHAT_ID)) {
+        console.warn("[security] Blocked unauthorized message from ID: " + chatId);
+        return; // Silently drop the message
+      }
+      // -------------------
+
       if (processing.has(msgKey)) return;
       processing.add(msgKey);
 
@@ -145,8 +151,6 @@ http.createServer(function(req, res) {
   console.log("HF Space: " + HF_URL);
   
   tgRequest("deleteWebhook", {}, function(err, data) {
-    if (err) console.warn("deleteWebhook error:", err.message);
-    else console.log("deleteWebhook:", data && data.ok ? "OK" : JSON.stringify(data));
     poll();
   });
 });
