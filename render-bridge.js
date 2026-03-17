@@ -35,8 +35,61 @@ function tgRequest(method, params, cb) {
   req.end();
 }
 
+// THE UPGRADED CHUNKING SENDER
 function sendMessage(chatId, text, cb) {
-  tgRequest("sendMessage", { chat_id: chatId, text: text }, cb || function() {});
+  var strText = String(text);
+  var MAX_LEN = 4000; // Leave a tiny buffer below Telegram's 4096 limit
+
+  // If it's a normal short message, send it immediately
+  if (strText.length <= MAX_LEN) {
+    tgRequest("sendMessage", { chat_id: chatId, text: strText }, cb || function(){});
+    return;
+  }
+
+  // If it's a massive wall of text, chop it into clean chunks
+  var chunks = [];
+  while (strText.length > 0) {
+    if (strText.length <= MAX_LEN) {
+      chunks.push(strText);
+      break;
+    }
+    
+    // Try to split cleanly at the last double-newline (paragraph break)
+    var splitAt = strText.lastIndexOf("\n\n", MAX_LEN);
+    
+    // If no paragraph break, try a single newline
+    if (splitAt === -1 || splitAt < MAX_LEN - 1000) {
+      splitAt = strText.lastIndexOf("\n", MAX_LEN);
+    }
+    
+    // If it's literally just a giant block of unbroken code/text, chop it hard
+    if (splitAt === -1 || splitAt < MAX_LEN - 1000) {
+      splitAt = MAX_LEN; 
+    }
+
+    chunks.push(strText.substring(0, splitAt));
+    strText = strText.substring(splitAt).trimStart();
+  }
+
+  // Send the chunks one by one in perfect order
+  var index = 0;
+  function sendNextChunk() {
+    if (index >= chunks.length) {
+      if (cb) cb();
+      return;
+    }
+    
+    tgRequest("sendMessage", { chat_id: chatId, text: chunks[index] }, function(err, res) {
+      if (err) console.error("[relay] Error sending chunk " + (index+1) + ":", err.message);
+      if (res && !res.ok) console.error("[relay] Telegram rejected chunk:", res.description);
+      
+      index++;
+      // Wait 300ms between messages so Telegram doesn't block us for spamming
+      setTimeout(sendNextChunk, 300); 
+    });
+  }
+  
+  sendNextChunk();
 }
 
 // ─── HF relay ─────────────────────────────────────────────────────────────────
@@ -117,7 +170,7 @@ function poll() {
       // --- THE BOUNCER ---
       if (ALLOWED_CHAT_ID && String(chatId) !== String(ALLOWED_CHAT_ID)) {
         console.warn("[security] Blocked unauthorized message from ID: " + chatId);
-        return; // Silently drop the message
+        return; 
       }
       // -------------------
 
