@@ -131,7 +131,7 @@ function askHF(chatId, text, cb) {
     });
   });
 
-  req.setTimeout(90000, function() {
+  req.setTimeout(300000, function() {
     req.destroy();
     cb(new Error("HF relay timeout"));
   });
