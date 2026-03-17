@@ -1,38 +1,62 @@
-const http = require('http');
-const https = require('https');
+const express = require('express');
+const app = express();
 
-console.log('[Interceptor] 🛡️ Network Hijack Active: api.telegram.org -> 127.0.0.1:7860/fake-tg');
+// Parse incoming JSON
+app.use(express.json());
 
-// 1. Intercept native fetch (Used by modern frameworks)
-const originalFetch = global.fetch;
-if (originalFetch) {
-    global.fetch = async function(url, options) {
-        let urlStr = typeof url === 'string' ? url : url.toString();
-        if (urlStr.includes('api.telegram.org')) {
-            urlStr = urlStr.replace('https://api.telegram.org', 'http://127.0.0.1:7860/fake-tg');
-            return originalFetch(urlStr, options);
-        }
-        return originalFetch(url, options);
-    };
-}
+const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const HF_URL = process.env.HF_SPACE_URL; 
 
-// 2. Intercept https.request (Used by older Telegram SDKs like telegraf)
-const originalRequest = https.request;
-https.request = function(options, ...args) {
-    let host = options.hostname || options.host || (typeof options === 'string' ? new URL(options).hostname : '');
+// ─── 1. INCOMING: Real Telegram -> Hugging Face ─────────────
+// (Catches messages from your phone and sends them to the Dome)
+app.post('/', async (req, res) => {
+    // Instantly acknowledge Telegram so it doesn't timeout and retry
+    res.sendStatus(200);
+
+    const message = req.body.message;
+    if (!message || !message.text) return;
+
+    console.log(`[Render] 📥 Forwarding message from ${message.chat.id} to Hugging Face...`);
     
-    if (host === 'api.telegram.org' || (typeof options === 'string' && options.includes('api.telegram.org'))) {
-        if (typeof options === 'string') {
-            options = options.replace('https://api.telegram.org', 'http://127.0.0.1:7860/fake-tg');
-            return http.request(options, ...args); // Downgrade to HTTP for local tunnel
-        } else {
-            options.protocol = 'http:';
-            options.hostname = '127.0.0.1';
-            options.host = '127.0.0.1';
-            options.port = 7860;
-            options.path = '/fake-tg' + options.path;
-            return http.request(options, ...args);
-        }
+    try {
+        await fetch(`${HF_URL}/bot-relay`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                chatId: message.chat.id, 
+                text: message.text 
+            })
+        });
+    } catch (e) {
+        console.error('[Render] ❌ HF Delivery Failed:', e.message);
     }
-    return originalRequest.call(https, options, ...args);
-};
+});
+
+// ─── 2. OUTGOING: Hugging Face -> Real Telegram ─────────────
+// (Catches replies from Native OpenClaw and texts them to your phone)
+app.post('/outbound-relay', async (req, res) => {
+    const { method, payload } = req.body;
+    if (!method || !payload) return res.status(400).send('Missing data');
+
+    console.log(`[Render] 📤 Relaying ${method} to Telegram...`);
+    
+    try {
+        const tgRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/${method}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        const data = await tgRes.json();
+        res.json(data); // Send Telegram's success receipt back to the Dome
+    } catch (e) {
+        console.error('[Render] ❌ Telegram Delivery Failed:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ─── STARTUP ────────────────────────────────────────────────
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`[Render] 🌉 Bridge active on port ${PORT}`);
+});
