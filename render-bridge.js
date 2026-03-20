@@ -4,7 +4,10 @@ app.use(express.json());
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const HF_URL = process.env.HF_SPACE_URL; 
-const HF_TOKEN = process.env.HF_TOKEN; // 👈 We added this!
+const HF_TOKEN = process.env.HF_TOKEN;
+
+// ─── HEALTH CHECK ────────────────────────────────────────────
+app.get('/health', (req, res) => res.sendStatus(200));
 
 // ─── 1. INCOMING: Real Telegram -> Hugging Face ─────────────
 app.post('/', async (req, res) => {
@@ -20,7 +23,6 @@ app.post('/', async (req, res) => {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                // 👈 This unlocks the Hugging Face front door!
                 'Authorization': `Bearer ${HF_TOKEN}` 
             },
             body: JSON.stringify({ 
