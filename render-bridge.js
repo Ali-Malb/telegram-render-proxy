@@ -39,12 +39,60 @@ app.post('/', async (req, res) => {
     }
 });
 
+const express = require('express');
+const app = express();
+app.use(express.json());
+
+const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const HF_URL = process.env.HF_SPACE_URL; 
+const HF_TOKEN = process.env.HF_TOKEN;
+
+// ─── HEALTH CHECK ────────────────────────────────────────────
+app.get('/health', (req, res) => res.sendStatus(200));
+
+// ─── 1. INCOMING: Real Telegram -> Hugging Face ─────────────
+app.post('/', async (req, res) => {
+    res.sendStatus(200);
+
+    const message = req.body.message;
+    if (!message || !message.text) return;
+
+    console.log(`[Render] 📥 Forwarding message from ${message.chat.id} to Hugging Face...`);
+    
+    try {
+        const hfResponse = await fetch(`${HF_URL}/bot-relay`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${HF_TOKEN}` 
+            },
+            body: JSON.stringify({ 
+                chatId: message.chat.id, 
+                text: message.text 
+            })
+        });
+
+        if (!hfResponse.ok) {
+            console.error(`[Render] ❌ HF Rejected Request: ${hfResponse.status} ${hfResponse.statusText}`);
+        }
+    } catch (e) {
+        console.error('[Render] ❌ HF Delivery Failed:', e.message);
+    }
+});
+
 // ─── 2. OUTGOING: Hugging Face -> Real Telegram ─────────────
 app.post('/outbound-relay', async (req, res) => {
     const { method, payload } = req.body;
     if (!method || !payload) return res.status(400).send('Missing data');
 
     console.log(`[Render] 📤 Relaying ${method} to Telegram...`);
+
+    // Scrub OpenClaw system logs from the message text
+    if (payload.text && typeof payload.text === 'string') {
+        payload.text = payload.text
+            .replace(/^\[plugins\].*\n?/gm, '') // Removes any line starting with [plugins]
+            .trim(); // Cleans up any leftover empty lines at the top
+    }
     
     try {
         // Initial attempt
