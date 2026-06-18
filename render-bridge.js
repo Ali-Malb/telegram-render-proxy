@@ -17,25 +17,24 @@ app.post('/', async (req, res) => {
     if (!message || !message.text) return;
 
     console.log(`[Render] 📥 Forwarding message from ${message.chat.id} to Hugging Face...`);
+    
     try {
-        const tgRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/${method}`, {
+        const hfResponse = await fetch(`${HF_URL}/bot-relay`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${HF_TOKEN}` 
+            },
+            body: JSON.stringify({ 
+                chatId: message.chat.id, 
+                text: message.text 
+            })
         });
-        
-        const data = await tgRes.json();
 
-        // ADDED: Check if Telegram rejected the request and log the reason
-        if (!tgRes.ok) {
-            console.error(`[Render] ❌ Telegram API Rejected Request: ${tgRes.status}`, data);
-        } else {
-            console.log(`[Render] ✅ Successfully delivered to Telegram!`);
+        if (!hfResponse.ok) {
+            console.error(`[Render] ❌ HF Rejected Request: ${hfResponse.status} ${hfResponse.statusText}`);
         }
-
-        res.json(data); 
     } catch (e) {
-// ... rest of your catch block
         console.error('[Render] ❌ HF Delivery Failed:', e.message);
     }
 });
@@ -55,6 +54,14 @@ app.post('/outbound-relay', async (req, res) => {
         });
         
         const data = await tgRes.json();
+
+        // ADDED: Check if Telegram rejected the request and log the reason
+        if (!tgRes.ok) {
+            console.error(`[Render] ❌ Telegram API Rejected Request: ${tgRes.status}`, data);
+        } else {
+            console.log(`[Render] ✅ Successfully delivered to Telegram!`);
+        }
+
         res.json(data); 
     } catch (e) {
         console.error('[Render] ❌ Telegram Delivery Failed:', e.message);
