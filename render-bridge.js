@@ -40,7 +40,6 @@ app.post('/', async (req, res) => {
 });
 
 // ─── 2. OUTGOING: Hugging Face -> Real Telegram ─────────────
-// ─── 2. OUTGOING: Hugging Face -> Real Telegram ─────────────
 app.post('/outbound-relay', async (req, res) => {
     const { method, payload } = req.body;
     if (!method || !payload) return res.status(400).send('Missing data');
@@ -48,6 +47,7 @@ app.post('/outbound-relay', async (req, res) => {
     console.log(`[Render] 📤 Relaying ${method} to Telegram...`);
     
     try {
+        // Initial attempt
         let tgRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/${method}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -56,14 +56,14 @@ app.post('/outbound-relay', async (req, res) => {
         
         let data = await tgRes.json();
 
-        // ADDED: Fallback mechanism for broken Markdown/HTML from the LLM
+        // Fallback mechanism for broken Markdown/HTML from the LLM
         if (!tgRes.ok && data.description && data.description.includes("can't parse entities")) {
             console.warn(`[Render] ⚠️ Markdown error detected. Retrying as plain text...`);
             
             // Remove the strict formatting requirement
             delete payload.parse_mode;
             
-            // Try sending it again
+            // Try sending it again as plain text
             tgRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/${method}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -72,19 +72,7 @@ app.post('/outbound-relay', async (req, res) => {
             data = await tgRes.json();
         }
 
-        if (!tgRes.ok) {
-            console.error(`[Render] ❌ Telegram API Rejected Request: ${tgRes.status}`, data);
-        } else {
-            console.log(`[Render] ✅ Successfully delivered to Telegram!`);
-        }
-
-        res.json(data); 
-    } catch (e) {
-        console.error('[Render] ❌ Telegram Delivery Failed:', e.message);
-        res.status(500).json({ error: e.message });
-    }
-});
-        // ADDED: Check if Telegram rejected the request and log the reason
+        // Final logging
         if (!tgRes.ok) {
             console.error(`[Render] ❌ Telegram API Rejected Request: ${tgRes.status}`, data);
         } else {
