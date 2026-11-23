@@ -19,6 +19,7 @@ const HF_FORWARD_MAX_RETRIES = Math.min(5, Math.max(1, Number(process.env.BRIDGE
 const TG_REQUEST_TIMEOUT_MS = Number(process.env.BRIDGE_TG_TIMEOUT_MS || 20000);
 const TG_MAX_MESSAGE_CHARS = Math.min(4096, Math.max(1000, Number(process.env.BRIDGE_TG_MAX_CHARS || 4000)));
 const TG_MAX_CAPTION_CHARS = 1024;
+const HF_KEEPALIVE_MS = Math.max(60_000, Number(process.env.BRIDGE_HF_KEEPALIVE_MS || 10 * 60 * 1000));
 
 // ─── TTL DEDUPLICATION MAPS ──────────────────────────────────────────────────
 const seenInboundUpdates = new Map();
@@ -347,7 +348,28 @@ app.post("/outbound-relay", async (req, res) => {
   }
 });
 
+// ─── MUTUAL KEEPALIVE: Render -> Hugging Face (/ping) ────────────────────────
+async function pingHuggingFace() {
+  if (!HF_URL) return;
+  try {
+    const headers = {};
+    if (HF_TOKEN) headers["Authorization"] = `Bearer ${HF_TOKEN}`;
+    const res = await fetch(`${HF_URL}/ping`, {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(10000)
+    });
+    console.log(`[Keepalive] HF ping: ${res.status}`);
+  } catch (e) {
+    console.log(`[Keepalive] HF ping failed: ${e.message}`);
+  }
+}
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`[Render] 🌉 Bridge active on port ${PORT}`);
+  if (HF_URL) {
+    setTimeout(pingHuggingFace, 15000);
+    setInterval(pingHuggingFace, HF_KEEPALIVE_MS);
+  }
 });
