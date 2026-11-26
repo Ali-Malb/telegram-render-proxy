@@ -96,6 +96,36 @@ app.get("/health", (_req, res) => {
     uptimeSec: Math.floor(process.uptime())
   });
 });
+// ─── TELEGRAM MINI APP (/call) & LIVEKIT TOKEN PROXY TO PRIVATE HF SPACE ────
+const _HF_URL = String(process.env.HF_SPACE_URL || "https://ali-m01-openclaw.hf.space")
+  .trim()
+  .replace(/\/+$/, "");
+const _HF_TOKEN = String(process.env.HF_TOKEN || "").trim();
+
+app.get("/call", async (_req, res) => {
+  try {
+    const r = await fetch(`${_HF_URL}/call`, {
+      headers: _HF_TOKEN ? { Authorization: `Bearer ${_HF_TOKEN}` } : {},
+      signal: AbortSignal.timeout(15000)
+    });
+    res.status(r.status).type("html").send(await r.text());
+  } catch (e) {
+    res.status(502).type("text").send(`HF /call proxy error: ${e.message}`);
+  }
+});
+
+app.post("/api/livekit-token", async (_req, res) => {
+  try {
+    const r = await fetch(`${_HF_URL}/api/livekit-token`, {
+      method: "POST",
+      headers: _HF_TOKEN ? { Authorization: `Bearer ${_HF_TOKEN}` } : {},
+      signal: AbortSignal.timeout(15000)
+    });
+    res.status(r.status).type("application/json").send(await r.text());
+  } catch (e) {
+    res.status(502).json({ error: `HF token proxy error: ${e.message}` });
+  }
+});
 
 // ─── ASYNC FORWARD TO HUGGING FACE WITH BACKOFF ──────────────────────────────
 async function forwardToHuggingFace(relayBody) {
