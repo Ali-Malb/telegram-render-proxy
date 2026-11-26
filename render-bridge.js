@@ -1,5 +1,6 @@
 "use strict";
 
+const { Readable } = require("stream");
 const express = require("express");
 const crypto = require("crypto");
 
@@ -377,7 +378,73 @@ app.post("/outbound-relay", async (req, res) => {
     return res.status(500).json({ ok: false, description: e.message });
   }
 });
+const _HF_URL = String(process.env.HF_SPACE_URL || "https://ali-m01-openclaw.hf.space")
+  .trim()
+  .replace(/\/+$/, "");
+const _HF_TOKEN = String(process.env.HF_TOKEN || "").trim();
 
+app.get("/call", async (_req, res) => {
+  try {
+    const r = await fetch(`${_HF_URL}/call`, {
+      headers: _HF_TOKEN ? { Authorization: `Bearer ${_HF_TOKEN}` } : {},
+      signal: AbortSignal.timeout(15000)
+    });
+    res.status(r.status).type("html").send(await r.text());
+  } catch (e) {
+    res.status(502).type("text").send(`HF /call proxy error: ${e.message}`);
+  }
+});
+
+app.post("/api/livekit-token", async (_req, res) => {
+  try {
+    const r = await fetch(`${_HF_URL}/api/livekit-token`, {
+      method: "POST",
+      headers: _HF_TOKEN ? { Authorization: `Bearer ${_HF_TOKEN}` } : {},
+      signal: AbortSignal.timeout(15000)
+    });
+    res.status(r.status).type("application/json").send(await r.text());
+  } catch (e) {
+    res.status(502).json({ error: `HF token proxy error: ${e.message}` });
+  }
+});
+
+app.get("/api/call-health", async (_req, res) => {
+  try {
+    const r = await fetch(`${_HF_URL}/api/call-health`, {
+      headers: _HF_TOKEN ? { Authorization: `Bearer ${_HF_TOKEN}` } : {},
+      signal: AbortSignal.timeout(15000)
+    });
+    res.status(r.status).type("application/json").send(await r.text());
+  } catch (e) {
+    res.status(502).json({ ok: false, error: `HF health proxy error: ${e.message}` });
+  }
+});
+
+app.use("/tokenrouter-relay", async (req, res) => {
+  try {
+    const upstreamPath = req.path && req.path !== "/" ? req.path : "/chat/completions";
+    const upstreamRes = await fetch(`https://api.tokenrouter.com/v1${upstreamPath}`, {
+      method: req.method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {})
+      },
+      body: ["GET", "HEAD"].includes(req.method) ? undefined : JSON.stringify(req.body),
+      signal: AbortSignal.timeout(120000)
+    });
+
+    res.status(upstreamRes.status);
+    for (const [k, v] of upstreamRes.headers.entries()) {
+      if (["content-encoding", "content-length", "transfer-encoding"].includes(k.toLowerCase())) continue;
+      res.setHeader(k, v);
+    }
+
+    if (upstreamRes.body) Readable.fromWeb(upstreamRes.body).pipe(res);
+    else res.end();
+  } catch (e) {
+    if (!res.headersSent) res.status(502).json({ error: { message: e.message } });
+  }
+});
 // ─── MUTUAL KEEPALIVE: Render -> Hugging Face (/ping) ────────────────────────
 async function pingHuggingFace() {
   if (!HF_URL) return;
