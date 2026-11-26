@@ -9,8 +9,10 @@ app.use(express.json({ limit: "50mb" }));
 
 // Preserve all existing environment variable names verbatim
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const HF_URL = String(process.env.HF_SPACE_URL || "").trim().replace(/\/+$/, "");
-const HF_TOKEN = process.env.HF_TOKEN;
+const HF_URL = String(process.env.HF_SPACE_URL || "https://ali-m01-openclaw.hf.space")
+  .trim()
+  .replace(/\/+$/, "");
+const HF_TOKEN = String(process.env.HF_TOKEN || "").trim();
 
 // Optional tuning env vars (safe defaults)
 const INBOUND_DEDUP_TTL_MS = Number(process.env.BRIDGE_INBOUND_DEDUP_TTL_MS || 15 * 60 * 1000);
@@ -96,36 +98,6 @@ app.get("/health", (_req, res) => {
     seenInbound: seenInboundUpdates.size,
     uptimeSec: Math.floor(process.uptime())
   });
-});
-// ─── TELEGRAM MINI APP (/call) & LIVEKIT TOKEN PROXY TO PRIVATE HF SPACE ────
-const _HF_URL = String(process.env.HF_SPACE_URL || "https://ali-m01-openclaw.hf.space")
-  .trim()
-  .replace(/\/+$/, "");
-const _HF_TOKEN = String(process.env.HF_TOKEN || "").trim();
-
-app.get("/call", async (_req, res) => {
-  try {
-    const r = await fetch(`${_HF_URL}/call`, {
-      headers: _HF_TOKEN ? { Authorization: `Bearer ${_HF_TOKEN}` } : {},
-      signal: AbortSignal.timeout(15000)
-    });
-    res.status(r.status).type("html").send(await r.text());
-  } catch (e) {
-    res.status(502).type("text").send(`HF /call proxy error: ${e.message}`);
-  }
-});
-
-app.post("/api/livekit-token", async (_req, res) => {
-  try {
-    const r = await fetch(`${_HF_URL}/api/livekit-token`, {
-      method: "POST",
-      headers: _HF_TOKEN ? { Authorization: `Bearer ${_HF_TOKEN}` } : {},
-      signal: AbortSignal.timeout(15000)
-    });
-    res.status(r.status).type("application/json").send(await r.text());
-  } catch (e) {
-    res.status(502).json({ error: `HF token proxy error: ${e.message}` });
-  }
 });
 
 // ─── ASYNC FORWARD TO HUGGING FACE WITH BACKOFF ──────────────────────────────
@@ -232,7 +204,7 @@ app.post("/", (req, res) => {
 
 // ─── HELPER: JSON OR MULTIPART TO REAL TELEGRAM API ──────────────────────────
 async function sendToTelegram(method, payload) {
-  const tgUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/${method}`;
+  const tgUrl = `[https://api.telegram.org/bot$](https://api.telegram.org/bot$){TELEGRAM_TOKEN}/${method}`;
   const hasFiles = Array.isArray(payload._files) && payload._files.length > 0;
 
   if (hasFiles) {
@@ -378,15 +350,12 @@ app.post("/outbound-relay", async (req, res) => {
     return res.status(500).json({ ok: false, description: e.message });
   }
 });
-const _HF_URL = String(process.env.HF_SPACE_URL || "https://ali-m01-openclaw.hf.space")
-  .trim()
-  .replace(/\/+$/, "");
-const _HF_TOKEN = String(process.env.HF_TOKEN || "").trim();
 
+// ─── 3. TELEGRAM MINI APP (/call), LIVEKIT TOKEN, HEALTH & TOKENROUTER RELAY ─
 app.get("/call", async (_req, res) => {
   try {
-    const r = await fetch(`${_HF_URL}/call`, {
-      headers: _HF_TOKEN ? { Authorization: `Bearer ${_HF_TOKEN}` } : {},
+    const r = await fetch(`${HF_URL}/call`, {
+      headers: HF_TOKEN ? { Authorization: `Bearer ${HF_TOKEN}` } : {},
       signal: AbortSignal.timeout(15000)
     });
     res.status(r.status).type("html").send(await r.text());
@@ -397,9 +366,9 @@ app.get("/call", async (_req, res) => {
 
 app.post("/api/livekit-token", async (_req, res) => {
   try {
-    const r = await fetch(`${_HF_URL}/api/livekit-token`, {
+    const r = await fetch(`${HF_URL}/api/livekit-token`, {
       method: "POST",
-      headers: _HF_TOKEN ? { Authorization: `Bearer ${_HF_TOKEN}` } : {},
+      headers: HF_TOKEN ? { Authorization: `Bearer ${HF_TOKEN}` } : {},
       signal: AbortSignal.timeout(15000)
     });
     res.status(r.status).type("application/json").send(await r.text());
@@ -410,8 +379,8 @@ app.post("/api/livekit-token", async (_req, res) => {
 
 app.get("/api/call-health", async (_req, res) => {
   try {
-    const r = await fetch(`${_HF_URL}/api/call-health`, {
-      headers: _HF_TOKEN ? { Authorization: `Bearer ${_HF_TOKEN}` } : {},
+    const r = await fetch(`${HF_URL}/api/call-health`, {
+      headers: HF_TOKEN ? { Authorization: `Bearer ${HF_TOKEN}` } : {},
       signal: AbortSignal.timeout(15000)
     });
     res.status(r.status).type("application/json").send(await r.text());
@@ -423,7 +392,7 @@ app.get("/api/call-health", async (_req, res) => {
 app.use("/tokenrouter-relay", async (req, res) => {
   try {
     const upstreamPath = req.path && req.path !== "/" ? req.path : "/chat/completions";
-    const upstreamRes = await fetch(`https://api.tokenrouter.com/v1${upstreamPath}`, {
+    const upstreamRes = await fetch(`[https://api.tokenrouter.com/v1$](https://api.tokenrouter.com/v1$){upstreamPath}`, {
       method: req.method,
       headers: {
         "Content-Type": "application/json",
@@ -445,6 +414,7 @@ app.use("/tokenrouter-relay", async (req, res) => {
     if (!res.headersSent) res.status(502).json({ error: { message: e.message } });
   }
 });
+
 // ─── MUTUAL KEEPALIVE: Render -> Hugging Face (/ping) ────────────────────────
 async function pingHuggingFace() {
   if (!HF_URL) return;
