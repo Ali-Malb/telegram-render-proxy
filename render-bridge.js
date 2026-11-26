@@ -204,7 +204,7 @@ app.post("/", (req, res) => {
 
 // ─── HELPER: JSON OR MULTIPART TO REAL TELEGRAM API ──────────────────────────
 async function sendToTelegram(method, payload) {
-  const tgUrl = `[https://api.telegram.org/bot$](https://api.telegram.org/bot$){TELEGRAM_TOKEN}/${method}`;
+  const tgUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/${method}`;
   const hasFiles = Array.isArray(payload._files) && payload._files.length > 0;
 
   if (hasFiles) {
@@ -392,7 +392,7 @@ app.get("/api/call-health", async (_req, res) => {
 app.use("/tokenrouter-relay", async (req, res) => {
   try {
     const upstreamPath = req.path && req.path !== "/" ? req.path : "/chat/completions";
-    const upstreamRes = await fetch(`[https://api.tokenrouter.com/v1$](https://api.tokenrouter.com/v1$){upstreamPath}`, {
+    const upstreamRes = await fetch(`https://api.tokenrouter.com/v1${upstreamPath}`, {
       method: req.method,
       headers: {
         "Content-Type": "application/json",
